@@ -145,7 +145,7 @@ class GmailTools(Toolkit):
         credentials_path: Optional[str] = None,
         token_path: Optional[str] = None,
         scopes: Optional[List[str]] = None,
-        port: Optional[int] = None,
+        oauth_port: int = 8080,
         include_html: bool = False,
         max_body_length: Optional[int] = None,
         attachment_dir: Optional[str] = None,
@@ -156,7 +156,7 @@ class GmailTools(Toolkit):
         self.token_path = token_path
         self.service: Optional[Resource] = None
         self.scopes = scopes or self.DEFAULT_SCOPES
-        self.port = port
+        self.oauth_port: int = oauth_port
         self.include_html = include_html
         self.max_body_length = max_body_length
         self.attachment_dir = attachment_dir
@@ -250,7 +250,7 @@ class GmailTools(Toolkit):
                     flow = InstalledAppFlow.from_client_secrets_file(str(creds_file), self.scopes)
                 else:
                     flow = InstalledAppFlow.from_client_config(client_config, self.scopes)
-                self.creds = flow.run_local_server(port=self.port)
+                self.creds = flow.run_local_server(port=self.oauth_port)
 
             if self.creds and self.creds.valid:
                 token_file.write_text(self.creds.to_json())
@@ -1179,9 +1179,7 @@ class GmailTools(Toolkit):
                 return json.dumps({"error": f"Maximum {_BATCH_MAX} threads per batch request"})
 
             service = cast(Resource, self.service)
-            raw_threads = self._batch_get(
-                ids, lambda tid: service.users().threads().get(userId="me", id=tid)
-            )
+            raw_threads = self._batch_get(ids, lambda tid: service.users().threads().get(userId="me", id=tid))
             threads = []
             for t in raw_threads:
                 if "error" in t:

@@ -1669,9 +1669,7 @@ def test_html_fallback_when_no_plain_text(gmail_tools, mock_gmail_service):
 
 
 def test_label_cache_invalidation(gmail_tools, mock_gmail_service):
-    mock_gmail_service.users().labels().list().execute.return_value = {
-        "labels": [{"id": "L1", "name": "Work"}]
-    }
+    mock_gmail_service.users().labels().list().execute.return_value = {"labels": [{"id": "L1", "name": "Work"}]}
     ids = gmail_tools._resolve_label_ids(["Work"])
     assert ids == ["L1"]
     assert gmail_tools._label_cache is not None
@@ -1682,9 +1680,7 @@ def test_label_cache_invalidation(gmail_tools, mock_gmail_service):
 
     # Invalidate
     gmail_tools._label_cache = None
-    mock_gmail_service.users().labels().list().execute.return_value = {
-        "labels": [{"id": "L2", "name": "Work"}]
-    }
+    mock_gmail_service.users().labels().list().execute.return_value = {"labels": [{"id": "L2", "name": "Work"}]}
     ids3 = gmail_tools._resolve_label_ids(["Work"])
     assert ids3 == ["L2"]
 
@@ -1706,19 +1702,38 @@ def test_scope_validation_new_tools():
 def test_all_33_tools_registered():
     tools = GmailTools()
     expected_tools = {
-        "get_latest_emails", "get_emails_from_user", "get_unread_emails",
-        "get_starred_emails", "get_emails_by_context", "get_emails_by_date",
-        "get_emails_by_thread", "search_emails",
-        "mark_email_as_read", "mark_email_as_unread",
-        "create_draft_email", "send_email", "send_email_reply",
-        "list_custom_labels", "apply_label", "remove_label", "delete_custom_label",
-        "get_message", "get_messages_batch",
-        "trash_message", "untrash_message",
+        "get_latest_emails",
+        "get_emails_from_user",
+        "get_unread_emails",
+        "get_starred_emails",
+        "get_emails_by_context",
+        "get_emails_by_date",
+        "get_emails_by_thread",
+        "search_emails",
+        "mark_email_as_read",
+        "mark_email_as_unread",
+        "create_draft_email",
+        "send_email",
+        "send_email_reply",
+        "list_custom_labels",
+        "apply_label",
+        "remove_label",
+        "delete_custom_label",
+        "get_message",
+        "get_messages_batch",
+        "trash_message",
+        "untrash_message",
         "download_attachment",
-        "get_thread", "search_threads", "get_threads_batch",
-        "modify_thread_labels", "trash_thread",
+        "get_thread",
+        "search_threads",
+        "get_threads_batch",
+        "modify_thread_labels",
+        "trash_thread",
         "batch_modify_labels",
-        "get_draft", "list_drafts", "update_draft", "send_draft",
+        "get_draft",
+        "list_drafts",
+        "update_draft",
+        "send_draft",
         "get_profile",
     }
     assert set(tools.functions.keys()) == expected_tools
