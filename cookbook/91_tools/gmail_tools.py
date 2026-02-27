@@ -143,7 +143,7 @@ thread_agent = Agent(
 agent = Agent(
     name="Full Gmail Agent",
     model=OpenAIChat(id="gpt-4o"),
-    tools=[GmailTools(max_body_length=2000)],
+    tools=[GmailTools(max_body_length=2000, login_hint="user@gmail.com")],
     description="You are an expert Gmail Agent that can read, draft, send and label emails using Gmail.",
     instructions=[
         "Based on user query, you can read, draft, send and label emails using Gmail.",

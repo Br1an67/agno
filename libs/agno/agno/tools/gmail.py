@@ -41,6 +41,10 @@ How to Get These Credentials:
 
 Note: The first time you run the application, it will open a browser window for OAuth authentication.
 A token.json file will be created to store the authentication credentials for future use.
+
+Tip: If the GCP project owner and the Gmail inbox belong to different accounts,
+use login_hint to pre-select the target account in the OAuth consent screen:
+    GmailTools(login_hint="target@gmail.com")
 """
 
 import base64
@@ -146,6 +150,7 @@ class GmailTools(Toolkit):
         token_path: Optional[str] = None,
         scopes: Optional[List[str]] = None,
         oauth_port: int = 8080,
+        login_hint: Optional[str] = None,
         include_html: bool = False,
         max_body_length: Optional[int] = None,
         attachment_dir: Optional[str] = None,
@@ -157,6 +162,8 @@ class GmailTools(Toolkit):
         self.service: Optional[Resource] = None
         self.scopes = scopes or self.DEFAULT_SCOPES
         self.oauth_port: int = oauth_port
+        # Pre-selects the Google account in the OAuth consent screen
+        self.login_hint = login_hint
         self.include_html = include_html
         self.max_body_length = max_body_length
         self.attachment_dir = attachment_dir
@@ -250,7 +257,10 @@ class GmailTools(Toolkit):
                     flow = InstalledAppFlow.from_client_secrets_file(str(creds_file), self.scopes)
                 else:
                     flow = InstalledAppFlow.from_client_config(client_config, self.scopes)
-                self.creds = flow.run_local_server(port=self.oauth_port)
+                oauth_kwargs: Dict[str, Any] = {}
+                if self.login_hint:
+                    oauth_kwargs["login_hint"] = self.login_hint
+                self.creds = flow.run_local_server(port=self.oauth_port, **oauth_kwargs)
 
             if self.creds and self.creds.valid:
                 token_file.write_text(self.creds.to_json())
