@@ -394,11 +394,8 @@ def test_html_message_content(gmail_tools, mock_gmail_service):
     assert "HTML Email" in result
     assert "sender@test.com" in result
 
-    # Verify HTML content is included in the result
-    assert (
-        html_content in result
-        or base64.urlsafe_b64decode(mock_message_data["payload"]["body"]["data"]).decode() in result
-    )
+    # HTML tags are stripped by default; verify the text content is present
+    assert "HTML content" in result
 
 
 def test_multiple_recipients(gmail_tools, mock_gmail_service):
@@ -1138,3 +1135,590 @@ def test_delete_custom_label_error_handling(gmail_tools, mock_gmail_service):
 
     result = gmail_tools.delete_custom_label("TestLabel", confirm=True)
     assert "Error deleting label 'TestLabel'" in result
+
+
+# =========================================================================
+# Tests for new tools (16)
+# =========================================================================
+
+
+def test_get_message(gmail_tools, mock_gmail_service):
+    mock_message_data = {
+        "id": "msg1",
+        "threadId": "thread1",
+        "labelIds": ["INBOX", "UNREAD"],
+        "snippet": "Hello world",
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": [
+                {"name": "Subject", "value": "Test Subject"},
+                {"name": "From", "value": "alice@test.com"},
+                {"name": "To", "value": "bob@test.com"},
+                {"name": "Date", "value": "2024-01-01"},
+            ],
+            "body": {"data": base64.urlsafe_b64encode(b"Hello body").decode()},
+        },
+    }
+    mock_gmail_service.users().messages().get().execute.return_value = mock_message_data
+    result = gmail_tools.get_message(message_id="msg1")
+    import json
+
+    data = json.loads(result)
+    assert data["id"] == "msg1"
+    assert data["threadId"] == "thread1"
+    assert data["subject"] == "Test Subject"
+    assert data["body"] == "Hello body"
+
+
+def test_get_message_with_attachments(gmail_tools, mock_gmail_service):
+    mock_message_data = {
+        "id": "msg1",
+        "threadId": "thread1",
+        "labelIds": [],
+        "snippet": "",
+        "payload": {
+            "mimeType": "multipart/mixed",
+            "headers": [
+                {"name": "Subject", "value": "With PDF"},
+                {"name": "From", "value": "alice@test.com"},
+                {"name": "Date", "value": "2024-01-01"},
+            ],
+            "parts": [
+                {
+                    "mimeType": "text/plain",
+                    "body": {"data": base64.urlsafe_b64encode(b"See attached").decode()},
+                },
+                {
+                    "filename": "report.pdf",
+                    "mimeType": "application/pdf",
+                    "body": {"size": 12345, "attachmentId": "att1"},
+                },
+            ],
+        },
+    }
+    mock_gmail_service.users().messages().get().execute.return_value = mock_message_data
+    result = gmail_tools.get_message(message_id="msg1")
+    import json
+
+    data = json.loads(result)
+    assert data["body"] == "See attached"
+    assert len(data["attachments"]) == 1
+    assert data["attachments"][0]["filename"] == "report.pdf"
+    assert data["attachments"][0]["attachmentId"] == "att1"
+
+
+def test_get_message_error(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().messages().get().execute.side_effect = HttpError(
+        resp=Mock(status=404), content=b'{"error": {"message": "Not Found"}}'
+    )
+    result = gmail_tools.get_message(message_id="bad_id")
+    import json
+
+    data = json.loads(result)
+    assert "error" in data
+
+
+def test_get_messages_batch(gmail_tools, mock_gmail_service):
+    mock_batch = MagicMock()
+    mock_gmail_service.new_batch_http_request.return_value = mock_batch
+
+    msg1 = {
+        "id": "m1",
+        "threadId": "t1",
+        "labelIds": [],
+        "snippet": "",
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": [{"name": "Subject", "value": "Msg 1"}],
+            "body": {"data": base64.urlsafe_b64encode(b"Body 1").decode()},
+        },
+    }
+
+    def execute_side_effect():
+        callback = mock_gmail_service.new_batch_http_request.call_args[1]["callback"]
+        callback("m1", msg1, None)
+
+    mock_batch.execute.side_effect = execute_side_effect
+    result = gmail_tools.get_messages_batch(message_ids="m1")
+    import json
+
+    data = json.loads(result)
+    assert len(data["messages"]) == 1
+    assert data["messages"][0]["subject"] == "Msg 1"
+
+
+def test_get_messages_batch_too_many(gmail_tools, mock_gmail_service):
+    ids = ",".join([f"m{i}" for i in range(101)])
+    result = gmail_tools.get_messages_batch(message_ids=ids)
+    import json
+
+    data = json.loads(result)
+    assert "error" in data
+    assert "100" in data["error"]
+
+
+def test_trash_message(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().messages().trash().execute.return_value = {"id": "msg1"}
+    result = gmail_tools.trash_message(message_id="msg1")
+    import json
+
+    data = json.loads(result)
+    assert data["id"] == "msg1"
+    assert data["action"] == "trashed"
+
+
+def test_untrash_message(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().messages().untrash().execute.return_value = {"id": "msg1"}
+    result = gmail_tools.untrash_message(message_id="msg1")
+    import json
+
+    data = json.loads(result)
+    assert data["id"] == "msg1"
+    assert data["action"] == "untrashed"
+
+
+def test_download_attachment(gmail_tools, mock_gmail_service, tmp_path):
+    att_data = base64.urlsafe_b64encode(b"file content").decode()
+    mock_gmail_service.users().messages().attachments().get().execute.return_value = {"data": att_data}
+    gmail_tools.attachment_dir = str(tmp_path)
+    result = gmail_tools.download_attachment(message_id="msg1", attachment_id="att1", filename="doc.pdf")
+    import json
+
+    data = json.loads(result)
+    assert data["filename"] == "doc.pdf"
+    assert "doc.pdf" in data["localPath"]
+    assert (tmp_path / "doc.pdf").read_bytes() == b"file content"
+
+
+def test_get_thread(gmail_tools, mock_gmail_service):
+    mock_thread = {
+        "id": "thread1",
+        "messages": [
+            {
+                "id": "m1",
+                "threadId": "thread1",
+                "labelIds": [],
+                "snippet": "",
+                "payload": {
+                    "mimeType": "text/plain",
+                    "headers": [{"name": "Subject", "value": "Thread Msg 1"}],
+                    "body": {"data": base64.urlsafe_b64encode(b"First").decode()},
+                },
+            },
+            {
+                "id": "m2",
+                "threadId": "thread1",
+                "labelIds": [],
+                "snippet": "",
+                "payload": {
+                    "mimeType": "text/plain",
+                    "headers": [{"name": "Subject", "value": "Re: Thread Msg 1"}],
+                    "body": {"data": base64.urlsafe_b64encode(b"Reply").decode()},
+                },
+            },
+        ],
+    }
+    mock_gmail_service.users().threads().get().execute.return_value = mock_thread
+    result = gmail_tools.get_thread(thread_id="thread1")
+    import json
+
+    data = json.loads(result)
+    assert data["threadId"] == "thread1"
+    assert data["messageCount"] == 2
+    assert data["messages"][0]["body"] == "First"
+    assert data["messages"][1]["body"] == "Reply"
+
+
+def test_search_threads(gmail_tools, mock_gmail_service):
+    mock_result = {
+        "threads": [{"id": "t1", "snippet": "Hello"}, {"id": "t2", "snippet": "World"}],
+        "resultSizeEstimate": 2,
+    }
+    mock_gmail_service.users().threads().list().execute.return_value = mock_result
+    result = gmail_tools.search_threads(query="is:unread", count=10)
+    import json
+
+    data = json.loads(result)
+    assert len(data["threads"]) == 2
+    assert data["threads"][0]["id"] == "t1"
+
+
+def test_get_threads_batch(gmail_tools, mock_gmail_service):
+    mock_batch = MagicMock()
+    mock_gmail_service.new_batch_http_request.return_value = mock_batch
+
+    thread1 = {
+        "id": "t1",
+        "messages": [
+            {
+                "id": "m1",
+                "threadId": "t1",
+                "labelIds": [],
+                "snippet": "",
+                "payload": {
+                    "mimeType": "text/plain",
+                    "headers": [{"name": "Subject", "value": "Thread 1"}],
+                    "body": {"data": base64.urlsafe_b64encode(b"Body").decode()},
+                },
+            }
+        ],
+    }
+
+    def execute_side_effect():
+        callback = mock_gmail_service.new_batch_http_request.call_args[1]["callback"]
+        callback("t1", thread1, None)
+
+    mock_batch.execute.side_effect = execute_side_effect
+    result = gmail_tools.get_threads_batch(thread_ids="t1")
+    import json
+
+    data = json.loads(result)
+    assert len(data["threads"]) == 1
+    assert data["threads"][0]["threadId"] == "t1"
+
+
+def test_modify_thread_labels(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().labels().list().execute.return_value = {
+        "labels": [{"id": "Label_1", "name": "Important"}]
+    }
+    mock_gmail_service.users().threads().modify().execute.return_value = {
+        "id": "thread1",
+        "labelIds": ["Label_1"],
+    }
+    result = gmail_tools.modify_thread_labels(thread_id="thread1", add_labels="Important")
+    import json
+
+    data = json.loads(result)
+    assert data["threadId"] == "thread1"
+
+
+def test_modify_thread_labels_empty(gmail_tools, mock_gmail_service):
+    result = gmail_tools.modify_thread_labels(thread_id="thread1")
+    import json
+
+    data = json.loads(result)
+    assert "error" in data
+
+
+def test_trash_thread(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().threads().trash().execute.return_value = {"id": "thread1"}
+    result = gmail_tools.trash_thread(thread_id="thread1")
+    import json
+
+    data = json.loads(result)
+    assert data["threadId"] == "thread1"
+    assert data["action"] == "trashed"
+
+
+def test_batch_modify_labels(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().labels().list().execute.return_value = {
+        "labels": [{"id": "Label_1", "name": "Newsletters"}]
+    }
+    mock_gmail_service.users().messages().batchModify().execute.return_value = None
+    result = gmail_tools.batch_modify_labels(message_ids="m1,m2,m3", add_labels="Newsletters")
+    import json
+
+    data = json.loads(result)
+    assert data["modified"] == 3
+
+
+def test_batch_modify_labels_too_many(gmail_tools, mock_gmail_service):
+    ids = ",".join([f"m{i}" for i in range(1001)])
+    result = gmail_tools.batch_modify_labels(message_ids=ids, add_labels="Test")
+    import json
+
+    data = json.loads(result)
+    assert "error" in data
+    assert "1000" in data["error"]
+
+
+def test_batch_modify_labels_empty(gmail_tools, mock_gmail_service):
+    result = gmail_tools.batch_modify_labels(message_ids="m1")
+    import json
+
+    data = json.loads(result)
+    assert "error" in data
+
+
+def test_get_draft(gmail_tools, mock_gmail_service):
+    mock_draft = {
+        "id": "draft1",
+        "message": {
+            "id": "msg1",
+            "threadId": "thread1",
+            "labelIds": ["DRAFT"],
+            "snippet": "Draft preview",
+            "payload": {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "Subject", "value": "My Draft"},
+                    {"name": "To", "value": "bob@test.com"},
+                ],
+                "body": {"data": base64.urlsafe_b64encode(b"Draft body").decode()},
+            },
+        },
+    }
+    mock_gmail_service.users().drafts().get().execute.return_value = mock_draft
+    result = gmail_tools.get_draft(draft_id="draft1")
+    import json
+
+    data = json.loads(result)
+    assert data["draftId"] == "draft1"
+    assert data["message"]["subject"] == "My Draft"
+    assert data["message"]["body"] == "Draft body"
+
+
+def test_list_drafts(gmail_tools, mock_gmail_service):
+    mock_result = {
+        "drafts": [
+            {"id": "d1", "message": {"id": "m1"}},
+            {"id": "d2", "message": {"id": "m2"}},
+        ],
+        "resultSizeEstimate": 2,
+    }
+    mock_gmail_service.users().drafts().list().execute.return_value = mock_result
+    result = gmail_tools.list_drafts(count=10)
+    import json
+
+    data = json.loads(result)
+    assert len(data["drafts"]) == 2
+
+
+def test_update_draft(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().drafts().update().execute.return_value = {"id": "draft1"}
+    result = gmail_tools.update_draft(
+        draft_id="draft1",
+        to="bob@test.com",
+        subject="Updated Draft",
+        body="New body",
+    )
+    import json
+
+    data = json.loads(result)
+    assert data["draftId"] == "draft1"
+    assert data["action"] == "updated"
+
+
+def test_update_draft_attachment_not_found(gmail_tools, mock_gmail_service):
+    result = gmail_tools.update_draft(
+        draft_id="draft1",
+        to="bob@test.com",
+        subject="Test",
+        body="Body",
+        attachments="/nonexistent/file.pdf",
+    )
+    import json
+
+    data = json.loads(result)
+    assert "error" in data
+    assert "not found" in data["error"].lower()
+
+
+def test_send_draft(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().drafts().send().execute.return_value = {
+        "id": "sent1",
+        "threadId": "thread1",
+        "labelIds": ["SENT"],
+    }
+    result = gmail_tools.send_draft(draft_id="draft1")
+    import json
+
+    data = json.loads(result)
+    assert data["action"] == "sent"
+    assert data["id"] == "sent1"
+
+
+def test_get_profile(gmail_tools, mock_gmail_service):
+    mock_profile = {
+        "emailAddress": "me@test.com",
+        "messagesTotal": 5000,
+        "threadsTotal": 2000,
+        "historyId": "12345",
+    }
+    mock_gmail_service.users().getProfile().execute.return_value = mock_profile
+    result = gmail_tools.get_profile()
+    import json
+
+    data = json.loads(result)
+    assert data["emailAddress"] == "me@test.com"
+    assert data["messagesTotal"] == 5000
+
+
+def test_get_profile_error(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().getProfile().execute.side_effect = HttpError(
+        resp=Mock(status=403), content=b'{"error": {"message": "Forbidden"}}'
+    )
+    result = gmail_tools.get_profile()
+    import json
+
+    data = json.loads(result)
+    assert "error" in data
+
+
+# =========================================================================
+# Tests for internal improvements
+# =========================================================================
+
+
+def test_init_new_params():
+    tools = GmailTools(include_html=True, max_body_length=500, attachment_dir="/tmp/att")
+    assert tools.include_html is True
+    assert tools.max_body_length == 500
+    assert tools.attachment_dir == "/tmp/att"
+
+
+def test_body_truncation(gmail_tools, mock_gmail_service):
+    gmail_tools.max_body_length = 10
+    long_body = "A" * 100
+    mock_messages = {"messages": [{"id": "123"}]}
+    mock_message_data = create_mock_message("123", "Test", "a@b.com", "2024-01-01", long_body)
+    mock_gmail_service.users().messages().list().execute.return_value = mock_messages
+    mock_gmail_service.users().messages().get().execute.return_value = mock_message_data
+    result = gmail_tools.get_latest_emails(count=1)
+    assert "... [truncated]" in result
+    gmail_tools.max_body_length = None
+
+
+def test_include_html_mode(gmail_tools, mock_gmail_service):
+    gmail_tools.include_html = True
+    html_content = "<p>Keep my HTML</p>"
+    mock_messages = {"messages": [{"id": "123"}]}
+    mock_message_data = {
+        "id": "123",
+        "payload": {
+            "mimeType": "text/html",
+            "headers": [
+                {"name": "Subject", "value": "HTML"},
+                {"name": "From", "value": "a@b.com"},
+                {"name": "Date", "value": "2024-01-01"},
+            ],
+            "body": {"data": base64.urlsafe_b64encode(html_content.encode()).decode()},
+        },
+    }
+    mock_gmail_service.users().messages().list().execute.return_value = mock_messages
+    mock_gmail_service.users().messages().get().execute.return_value = mock_message_data
+    result = gmail_tools.get_latest_emails(count=1)
+    assert "<p>Keep my HTML</p>" in result
+    gmail_tools.include_html = False
+
+
+def test_nested_multipart_parsing(gmail_tools, mock_gmail_service):
+    mock_messages = {"messages": [{"id": "123"}]}
+    mock_message_data = {
+        "id": "123",
+        "payload": {
+            "mimeType": "multipart/mixed",
+            "headers": [
+                {"name": "Subject", "value": "Nested"},
+                {"name": "From", "value": "a@b.com"},
+                {"name": "Date", "value": "2024-01-01"},
+            ],
+            "parts": [
+                {
+                    "mimeType": "multipart/alternative",
+                    "parts": [
+                        {
+                            "mimeType": "text/plain",
+                            "body": {"data": base64.urlsafe_b64encode(b"Plain text body").decode()},
+                        },
+                        {
+                            "mimeType": "text/html",
+                            "body": {"data": base64.urlsafe_b64encode(b"<p>HTML body</p>").decode()},
+                        },
+                    ],
+                },
+                {
+                    "filename": "attachment.pdf",
+                    "mimeType": "application/pdf",
+                    "body": {"size": 1000, "attachmentId": "att123"},
+                },
+            ],
+        },
+    }
+    mock_gmail_service.users().messages().list().execute.return_value = mock_messages
+    mock_gmail_service.users().messages().get().execute.return_value = mock_message_data
+    result = gmail_tools.get_latest_emails(count=1)
+    assert "Plain text body" in result
+    assert "attachment.pdf" in result
+
+
+def test_html_fallback_when_no_plain_text(gmail_tools, mock_gmail_service):
+    mock_messages = {"messages": [{"id": "123"}]}
+    mock_message_data = {
+        "id": "123",
+        "payload": {
+            "mimeType": "multipart/alternative",
+            "headers": [
+                {"name": "Subject", "value": "HTML Only"},
+                {"name": "From", "value": "a@b.com"},
+                {"name": "Date", "value": "2024-01-01"},
+            ],
+            "parts": [
+                {
+                    "mimeType": "text/html",
+                    "body": {"data": base64.urlsafe_b64encode(b"<b>Bold content</b>").decode()},
+                },
+            ],
+        },
+    }
+    mock_gmail_service.users().messages().list().execute.return_value = mock_messages
+    mock_gmail_service.users().messages().get().execute.return_value = mock_message_data
+    result = gmail_tools.get_latest_emails(count=1)
+    assert "Bold content" in result
+    assert "<b>" not in result
+
+
+def test_label_cache_invalidation(gmail_tools, mock_gmail_service):
+    mock_gmail_service.users().labels().list().execute.return_value = {
+        "labels": [{"id": "L1", "name": "Work"}]
+    }
+    ids = gmail_tools._resolve_label_ids(["Work"])
+    assert ids == ["L1"]
+    assert gmail_tools._label_cache is not None
+
+    # Cache should be used for second call (no additional API call)
+    ids2 = gmail_tools._resolve_label_ids(["Work"])
+    assert ids2 == ["L1"]
+
+    # Invalidate
+    gmail_tools._label_cache = None
+    mock_gmail_service.users().labels().list().execute.return_value = {
+        "labels": [{"id": "L2", "name": "Work"}]
+    }
+    ids3 = gmail_tools._resolve_label_ids(["Work"])
+    assert ids3 == ["L2"]
+
+
+def test_scope_validation_new_tools():
+    with pytest.raises(ValueError, match="required for email modification"):
+        GmailTools(
+            scopes=["https://www.googleapis.com/auth/gmail.readonly"],
+            include_tools=["trash_message"],
+        )
+
+    with pytest.raises(ValueError, match="required for email reading"):
+        GmailTools(
+            scopes=["https://www.googleapis.com/auth/gmail.compose"],
+            include_tools=["get_message"],
+        )
+
+
+def test_all_33_tools_registered():
+    tools = GmailTools()
+    expected_tools = {
+        "get_latest_emails", "get_emails_from_user", "get_unread_emails",
+        "get_starred_emails", "get_emails_by_context", "get_emails_by_date",
+        "get_emails_by_thread", "search_emails",
+        "mark_email_as_read", "mark_email_as_unread",
+        "create_draft_email", "send_email", "send_email_reply",
+        "list_custom_labels", "apply_label", "remove_label", "delete_custom_label",
+        "get_message", "get_messages_batch",
+        "trash_message", "untrash_message",
+        "download_attachment",
+        "get_thread", "search_threads", "get_threads_batch",
+        "modify_thread_labels", "trash_thread",
+        "batch_modify_labels",
+        "get_draft", "list_drafts", "update_draft", "send_draft",
+        "get_profile",
+    }
+    assert set(tools.functions.keys()) == expected_tools
