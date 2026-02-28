@@ -741,6 +741,10 @@ class SqliteDb(BaseDb):
             with self.Session() as sess, sess.begin():
                 stmt = select(table).where(table.c.session_id == session_id)
 
+                # Filter by session_type to ensure we get the correct session type
+                session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
+                stmt = stmt.where(table.c.session_type == session_type_value)
+
                 # Filtering
                 if user_id is not None:
                     stmt = stmt.where(table.c.user_id == user_id)
@@ -954,7 +958,7 @@ class SqliteDb(BaseDb):
                         updated_at=serialized_session.get("created_at"),
                     )
                     stmt = stmt.on_conflict_do_update(
-                        index_elements=["session_id"],
+                        index_elements=["session_id", "session_type"],
                         set_=dict(
                             agent_id=serialized_session.get("agent_id"),
                             user_id=serialized_session.get("user_id"),
@@ -993,7 +997,7 @@ class SqliteDb(BaseDb):
                     )
 
                     stmt = stmt.on_conflict_do_update(
-                        index_elements=["session_id"],
+                        index_elements=["session_id", "session_type"],
                         set_=dict(
                             team_id=serialized_session.get("team_id"),
                             user_id=serialized_session.get("user_id"),
@@ -1031,7 +1035,7 @@ class SqliteDb(BaseDb):
                         metadata=serialized_session.get("metadata"),
                     )
                     stmt = stmt.on_conflict_do_update(
-                        index_elements=["session_id"],
+                        index_elements=["session_id", "session_type"],
                         set_=dict(
                             workflow_id=serialized_session.get("workflow_id"),
                             user_id=serialized_session.get("user_id"),
@@ -1134,7 +1138,7 @@ class SqliteDb(BaseDb):
                     if agent_data:
                         stmt = sqlite.insert(table)
                         stmt = stmt.on_conflict_do_update(
-                            index_elements=["session_id"],
+                            index_elements=["session_id", "session_type"],
                             set_=dict(
                                 agent_id=stmt.excluded.agent_id,
                                 user_id=stmt.excluded.user_id,
@@ -1150,7 +1154,9 @@ class SqliteDb(BaseDb):
 
                         # Fetch the results for agent sessions
                         agent_ids = [session.session_id for session in agent_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(agent_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(agent_ids)) & (table.c.session_type == SessionType.AGENT.value)
+                        )
                         result = sess.execute(select_stmt).fetchall()
 
                         for row in result:
@@ -1189,7 +1195,7 @@ class SqliteDb(BaseDb):
                     if team_data:
                         stmt = sqlite.insert(table)
                         stmt = stmt.on_conflict_do_update(
-                            index_elements=["session_id"],
+                            index_elements=["session_id", "session_type"],
                             set_=dict(
                                 team_id=stmt.excluded.team_id,
                                 user_id=stmt.excluded.user_id,
@@ -1205,7 +1211,9 @@ class SqliteDb(BaseDb):
 
                         # Fetch the results for team sessions
                         team_ids = [session.session_id for session in team_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(team_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(team_ids)) & (table.c.session_type == SessionType.TEAM.value)
+                        )
                         result = sess.execute(select_stmt).fetchall()
 
                         for row in result:
@@ -1244,7 +1252,7 @@ class SqliteDb(BaseDb):
                     if workflow_data:
                         stmt = sqlite.insert(table)
                         stmt = stmt.on_conflict_do_update(
-                            index_elements=["session_id"],
+                            index_elements=["session_id", "session_type"],
                             set_=dict(
                                 workflow_id=stmt.excluded.workflow_id,
                                 user_id=stmt.excluded.user_id,
@@ -1260,7 +1268,9 @@ class SqliteDb(BaseDb):
 
                         # Fetch the results for workflow sessions
                         workflow_ids = [session.session_id for session in workflow_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(workflow_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(workflow_ids)) & (table.c.session_type == SessionType.WORKFLOW.value)
+                        )
                         result = sess.execute(select_stmt).fetchall()
 
                         for row in result:

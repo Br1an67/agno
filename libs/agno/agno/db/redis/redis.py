@@ -365,6 +365,10 @@ class RedisDb(BaseDb):
                 return None
 
             # Apply filters
+            session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
+            if session.get("session_type") != session_type_value:
+                return None
+
             if user_id is not None and session.get("user_id") != user_id:
                 return None
 
@@ -541,7 +545,17 @@ class RedisDb(BaseDb):
         try:
             session_dict = session.to_dict()
 
-            existing = self._get_record(table_type="sessions", record_id=session.session_id)
+            # Determine session_type to include in the record key
+            if isinstance(session, AgentSession):
+                session_type_value = SessionType.AGENT.value
+            elif isinstance(session, TeamSession):
+                session_type_value = SessionType.TEAM.value
+            else:
+                session_type_value = SessionType.WORKFLOW.value
+
+            record_id = f"{session.session_id}:{session_type_value}"
+
+            existing = self._get_record(table_type="sessions", record_id=record_id)
             if (
                 existing
                 and existing.get("user_id") is not None
@@ -570,7 +584,7 @@ class RedisDb(BaseDb):
 
                 success = self._store_record(
                     table_type="sessions",
-                    record_id=session.session_id,
+                    record_id=record_id,
                     data=data,
                     index_fields=["user_id", "agent_id", "session_type"],
                 )
@@ -603,7 +617,7 @@ class RedisDb(BaseDb):
 
                 success = self._store_record(
                     table_type="sessions",
-                    record_id=session.session_id,
+                    record_id=record_id,
                     data=data,
                     index_fields=["user_id", "team_id", "session_type"],
                 )
@@ -636,7 +650,7 @@ class RedisDb(BaseDb):
 
                 success = self._store_record(
                     table_type="sessions",
-                    record_id=session.session_id,
+                    record_id=record_id,
                     data=data,
                     index_fields=["user_id", "workflow_id", "session_type"],
                 )

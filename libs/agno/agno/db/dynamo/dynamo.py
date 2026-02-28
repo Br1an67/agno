@@ -316,6 +316,10 @@ class DynamoDb(BaseDb):
 
             session = deserialize_from_dynamodb_item(item)
 
+            session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
+            if session.get("session_type") != session_type_value:
+                return None
+
             if user_id is not None and session.get("user_id") != user_id:
                 return None
 
@@ -558,6 +562,14 @@ class DynamoDb(BaseDb):
         try:
             table_name = self._get_table("sessions", create_table_if_not_found=True)
 
+            # Determine session_type for the incoming session
+            if isinstance(session, AgentSession):
+                session_type_value = SessionType.AGENT.value
+            elif isinstance(session, TeamSession):
+                session_type_value = SessionType.TEAM.value
+            else:
+                session_type_value = SessionType.WORKFLOW.value
+
             # Get session if it already exists in the db.
             # We need to do this to handle updating nested fields.
             response = self.client.get_item(TableName=table_name, Key={"session_id": {"S": session.session_id}})
@@ -566,6 +578,9 @@ class DynamoDb(BaseDb):
             if existing_item:
                 existing_uid = existing_item.get("user_id", {}).get("S")
                 if existing_uid is not None and existing_uid != session.user_id:
+                    return None
+                existing_session_type = existing_item.get("session_type", {}).get("S")
+                if existing_session_type is not None and existing_session_type != session_type_value:
                     return None
 
             # Prepare the session to upsert, merging with existing session if it exists.
@@ -579,14 +594,15 @@ class DynamoDb(BaseDb):
             item = serialize_to_dynamo_item(serialized_session)
             put_kwargs: Dict[str, Any] = {"TableName": table_name, "Item": item}
 
-            expr_names = {"#uid": "user_id"}
+            expr_names = {"#uid": "user_id", "#st": "session_type"}
             if session.user_id is not None:
                 put_kwargs["ConditionExpression"] = (
-                    "attribute_not_exists(session_id) OR #uid = :incoming_uid OR attribute_not_exists(#uid)"
+                    "attribute_not_exists(session_id) OR (#st = :incoming_st AND (#uid = :incoming_uid OR attribute_not_exists(#uid)))"
                 )
-                put_kwargs["ExpressionAttributeValues"] = {":incoming_uid": {"S": session.user_id}}
+                put_kwargs["ExpressionAttributeValues"] = {":incoming_uid": {"S": session.user_id}, ":incoming_st": {"S": session_type_value}}
             else:
-                put_kwargs["ConditionExpression"] = "attribute_not_exists(session_id) OR attribute_not_exists(#uid)"
+                put_kwargs["ConditionExpression"] = "attribute_not_exists(session_id) OR (#st = :incoming_st AND attribute_not_exists(#uid))"
+                put_kwargs["ExpressionAttributeValues"] = {":incoming_st": {"S": session_type_value}}
             put_kwargs["ExpressionAttributeNames"] = expr_names
 
             try:

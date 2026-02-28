@@ -329,7 +329,9 @@ class FirestoreDb(BaseDb):
         """
         try:
             collection_ref = self._get_collection(table_type="sessions")
+            session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
             query = collection_ref.where(filter=FieldFilter("session_id", "==", session_id))
+            query = query.where(filter=FieldFilter("session_type", "==", session_type_value))
 
             if user_id is not None:
                 query = query.where(filter=FieldFilter("user_id", "==", user_id))
@@ -626,7 +628,7 @@ class FirestoreDb(BaseDb):
                 }
 
             # Find existing document or create new one
-            docs = collection_ref.where(filter=FieldFilter("session_id", "==", record["session_id"])).stream()
+            docs = collection_ref.where(filter=FieldFilter("session_id", "==", record["session_id"])).where(filter=FieldFilter("session_type", "==", record["session_type"])).stream()
             doc_ref = next((doc.reference for doc in docs), None)
 
             if doc_ref is not None:

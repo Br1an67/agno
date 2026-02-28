@@ -586,6 +586,10 @@ class SingleStoreDb(BaseDb):
             with self.Session() as sess:
                 stmt = select(table).where(table.c.session_id == session_id)
 
+                # Filter by session_type to ensure we get the correct session type
+                session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
+                stmt = stmt.where(table.c.session_type == session_type_value)
+
                 if user_id is not None:
                     stmt = stmt.where(table.c.user_id == user_id)
                 result = sess.execute(stmt).fetchone()
@@ -815,6 +819,7 @@ class SingleStoreDb(BaseDb):
                     existing_row = sess.execute(
                         select(table.c.user_id)
                         .where(table.c.session_id == session_dict.get("session_id"))
+                        .where(table.c.session_type == SessionType.AGENT.value)
                         .with_for_update()
                     ).fetchone()
                     if existing_row is not None:
@@ -866,6 +871,7 @@ class SingleStoreDb(BaseDb):
                     existing_row = sess.execute(
                         select(table.c.user_id)
                         .where(table.c.session_id == session_dict.get("session_id"))
+                        .where(table.c.session_type == SessionType.TEAM.value)
                         .with_for_update()
                     ).fetchone()
                     if existing_row is not None:
@@ -917,6 +923,7 @@ class SingleStoreDb(BaseDb):
                     existing_row = sess.execute(
                         select(table.c.user_id)
                         .where(table.c.session_id == session_dict.get("session_id"))
+                        .where(table.c.session_type == SessionType.WORKFLOW.value)
                         .with_for_update()
                     ).fetchone()
                     if existing_row is not None:
@@ -1046,7 +1053,9 @@ class SingleStoreDb(BaseDb):
 
                         # Fetch the results for agent sessions
                         agent_ids = [session.session_id for session in agent_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(agent_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(agent_ids)) & (table.c.session_type == SessionType.AGENT.value)
+                        )
                         result = sess.execute(select_stmt).fetchall()
 
                         for row in result:
@@ -1097,7 +1106,9 @@ class SingleStoreDb(BaseDb):
 
                         # Fetch the results for team sessions
                         team_ids = [session.session_id for session in team_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(team_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(team_ids)) & (table.c.session_type == SessionType.TEAM.value)
+                        )
                         result = sess.execute(select_stmt).fetchall()
 
                         for row in result:
@@ -1148,7 +1159,9 @@ class SingleStoreDb(BaseDb):
 
                         # Fetch the results for workflow sessions
                         workflow_ids = [session.session_id for session in workflow_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(workflow_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(workflow_ids)) & (table.c.session_type == SessionType.WORKFLOW.value)
+                        )
                         result = sess.execute(select_stmt).fetchall()
 
                         for row in result:

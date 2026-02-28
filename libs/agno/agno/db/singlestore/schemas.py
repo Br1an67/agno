@@ -9,7 +9,7 @@ except ImportError:
 
 SESSION_TABLE_SCHEMA = {
     "session_id": {"type": lambda: String(128), "primary_key": True, "nullable": False},
-    "session_type": {"type": lambda: String(20), "nullable": False, "index": True},
+    "session_type": {"type": lambda: String(20), "primary_key": True, "nullable": False, "index": True},
     "agent_id": {"type": lambda: String(128), "nullable": True},
     "team_id": {"type": lambda: String(128), "nullable": True},
     "workflow_id": {"type": lambda: String(128), "nullable": True},

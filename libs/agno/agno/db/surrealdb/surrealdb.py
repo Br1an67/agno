@@ -295,7 +295,9 @@ class SurrealDb(BaseDb):
         """
         sessions_table = self._get_table("sessions")
         record = RecordID(sessions_table, session_id)
+        session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
         where = WhereClause()
+        where = where.and_("session_type", session_type_value)
         if user_id is not None:
             where = where.and_("user_id", user_id)
 
@@ -484,10 +486,11 @@ class SurrealDb(BaseDb):
         """
         session_type = get_session_type(session)
         table = self._get_table("sessions")
+        session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
 
         existing = self.client.query(
-            f"SELECT user_id FROM {table} WHERE id = $record",
-            {"record": RecordID(table, session.session_id)},
+            f"SELECT user_id FROM {table} WHERE id = $record AND session_type = $st",
+            {"record": RecordID(table, session.session_id), "st": session_type_value},
         )
         if isinstance(existing, list) and len(existing) > 0:
             existing_uid = existing[0].get("user_id") if isinstance(existing[0], dict) else None
@@ -495,10 +498,11 @@ class SurrealDb(BaseDb):
                 return None
 
         session_raw = self._query_one(
-            "UPSERT ONLY $record CONTENT $content",
+            "UPSERT ONLY $record CONTENT $content WHERE session_type = $st",
             {
                 "record": RecordID(table, session.session_id),
                 "content": serialize_session(session, self.table_names),
+                "st": session_type_value,
             },
             dict,
         )

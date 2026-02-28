@@ -9,8 +9,9 @@ except ImportError:
 
 
 SESSION_TABLE_SCHEMA = {
-    "session_id": {"type": String, "primary_key": True, "nullable": False},
+    "session_id": {"type": String, "nullable": False},
     "session_type": {"type": String, "nullable": False, "index": True},
+    "__primary_key__": ["session_id", "session_type"],
     "agent_id": {"type": String, "nullable": True},
     "team_id": {"type": String, "nullable": True},
     "workflow_id": {"type": String, "nullable": True},

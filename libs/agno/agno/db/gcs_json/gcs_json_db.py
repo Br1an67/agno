@@ -246,8 +246,11 @@ class GcsJsonDb(BaseDb):
         try:
             sessions = self._read_json_file(self.session_table_name)
 
+            session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
             for session_data in sessions:
                 if session_data.get("session_id") == session_id:
+                    if session_data.get("session_type") != session_type_value:
+                        continue
                     if user_id is not None and session_data.get("user_id") != user_id:
                         continue
 
@@ -425,8 +428,10 @@ class GcsJsonDb(BaseDb):
             # Find existing session to update
             session_updated = False
             for i, existing_session in enumerate(sessions):
-                if existing_session.get("session_id") == session_dict.get("session_id") and self._matches_session_key(
-                    existing_session, session
+                if (
+                    existing_session.get("session_id") == session_dict.get("session_id")
+                    and existing_session.get("session_type") == session_dict.get("session_type")
+                    and self._matches_session_key(existing_session, session)
                 ):
                     existing_uid = existing_session.get("user_id")
                     if existing_uid is not None and existing_uid != session_dict.get("user_id"):

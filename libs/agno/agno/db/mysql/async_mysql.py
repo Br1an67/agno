@@ -524,6 +524,10 @@ class AsyncMySQLDb(AsyncBaseDb):
             async with self.async_session_factory() as sess:
                 stmt = select(table).where(table.c.session_id == session_id)
 
+                # Filter by session_type to ensure we get the correct session type
+                session_type_value = session_type.value if isinstance(session_type, SessionType) else session_type
+                stmt = stmt.where(table.c.session_type == session_type_value)
+
                 if user_id is not None:
                     stmt = stmt.where(table.c.user_id == user_id)
                 result = await sess.execute(stmt)
@@ -748,6 +752,7 @@ class AsyncMySQLDb(AsyncBaseDb):
                     existing_result = await sess.execute(
                         select(table.c.user_id)
                         .where(table.c.session_id == session_dict.get("session_id"))
+                        .where(table.c.session_type == SessionType.AGENT.value)
                         .with_for_update()
                     )
                     existing_row = existing_result.fetchone()
@@ -783,7 +788,7 @@ class AsyncMySQLDb(AsyncBaseDb):
                     await sess.execute(stmt)
 
                     # Fetch the row
-                    select_stmt = select(table).where(table.c.session_id == session_dict.get("session_id"))
+                    select_stmt = select(table).where((table.c.session_id == session_dict.get("session_id")) & (table.c.session_type == SessionType.AGENT.value))
                     result = await sess.execute(select_stmt)
                     row = result.fetchone()
                     if row is None:
@@ -801,6 +806,7 @@ class AsyncMySQLDb(AsyncBaseDb):
                     existing_result = await sess.execute(
                         select(table.c.user_id)
                         .where(table.c.session_id == session_dict.get("session_id"))
+                        .where(table.c.session_type == SessionType.TEAM.value)
                         .with_for_update()
                     )
                     existing_row = existing_result.fetchone()
@@ -836,7 +842,7 @@ class AsyncMySQLDb(AsyncBaseDb):
                     await sess.execute(stmt)
 
                     # Fetch the row
-                    select_stmt = select(table).where(table.c.session_id == session_dict.get("session_id"))
+                    select_stmt = select(table).where((table.c.session_id == session_dict.get("session_id")) & (table.c.session_type == SessionType.TEAM.value))
                     result = await sess.execute(select_stmt)
                     row = result.fetchone()
                     if row is None:
@@ -854,6 +860,7 @@ class AsyncMySQLDb(AsyncBaseDb):
                     existing_result = await sess.execute(
                         select(table.c.user_id)
                         .where(table.c.session_id == session_dict.get("session_id"))
+                        .where(table.c.session_type == SessionType.WORKFLOW.value)
                         .with_for_update()
                     )
                     existing_row = existing_result.fetchone()
@@ -889,7 +896,7 @@ class AsyncMySQLDb(AsyncBaseDb):
                     await sess.execute(stmt)
 
                     # Fetch the row
-                    select_stmt = select(table).where(table.c.session_id == session_dict.get("session_id"))
+                    select_stmt = select(table).where((table.c.session_id == session_dict.get("session_id")) & (table.c.session_type == SessionType.WORKFLOW.value))
                     result = await sess.execute(select_stmt)
                     row = result.fetchone()
                     if row is None:
@@ -988,7 +995,9 @@ class AsyncMySQLDb(AsyncBaseDb):
 
                         # Fetch the results for agent sessions
                         agent_ids = [session.session_id for session in agent_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(agent_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(agent_ids)) & (table.c.session_type == SessionType.AGENT.value)
+                        )
                         result = await sess.execute(select_stmt)
                         fetched_rows = result.fetchall()
 
@@ -1041,7 +1050,9 @@ class AsyncMySQLDb(AsyncBaseDb):
 
                         # Fetch the results for team sessions
                         team_ids = [session.session_id for session in team_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(team_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(team_ids)) & (table.c.session_type == SessionType.TEAM.value)
+                        )
                         result = await sess.execute(select_stmt)
                         fetched_rows = result.fetchall()
 
@@ -1094,7 +1105,9 @@ class AsyncMySQLDb(AsyncBaseDb):
 
                         # Fetch the results for workflow sessions
                         workflow_ids = [session.session_id for session in workflow_sessions]
-                        select_stmt = select(table).where(table.c.session_id.in_(workflow_ids))
+                        select_stmt = select(table).where(
+                            (table.c.session_id.in_(workflow_ids)) & (table.c.session_type == SessionType.WORKFLOW.value)
+                        )
                         result = await sess.execute(select_stmt)
                         fetched_rows = result.fetchall()
 
