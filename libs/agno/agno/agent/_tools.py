@@ -323,10 +323,12 @@ def parse_tools(
     model: Model,
     run_context: Optional[RunContext] = None,
     async_mode: bool = False,
+    existing_tools: Optional[List[Union[Function, dict]]] = None,
 ) -> List[Union[Function, dict]]:
-    _function_names: List[str] = []
+    _function_names = [tool.name for tool in existing_tools or [] if isinstance(tool, Function)]
     _functions: List[Union[Function, dict]] = []
-    agent._tool_instructions = []
+    if existing_tools is None or agent._tool_instructions is None:
+        agent._tool_instructions = []
 
     # Get output_schema from run_context
     output_schema = run_context.output_schema if run_context else None
@@ -439,6 +441,7 @@ def determine_tools_for_model(
     run_context: RunContext,
     session: AgentSession,
     async_mode: bool = False,
+    existing_tools: Optional[List[Union[Function, dict]]] = None,
 ) -> List[Union[Function, dict]]:
     _functions: List[Union[Function, dict]] = []
 
@@ -446,7 +449,12 @@ def determine_tools_for_model(
     if processed_tools is not None and len(processed_tools) > 0:
         log_debug("Processing tools for model")
         _functions = parse_tools(
-            agent, tools=processed_tools, model=model, run_context=run_context, async_mode=async_mode
+            agent,
+            tools=processed_tools,
+            model=model,
+            run_context=run_context,
+            async_mode=async_mode,
+            existing_tools=existing_tools,
         )
 
     # Update the session state for the functions
@@ -474,10 +482,30 @@ def determine_tools_for_model(
                 func._audios = joint_audios
                 func._videos = joint_videos
 
-    # Store reference so add_tool() can append mid-execution
-    agent._active_model_tools = _functions
+    registry = _functions if existing_tools is None else existing_tools
 
-    return _functions
+    def add_dynamic_tool(tool: Union[Toolkit, Callable, Function, Dict]) -> None:
+        if not async_mode:
+            _raise_if_async_tools_in_list([tool])
+        determine_tools_for_model(
+            agent=agent,
+            model=model,
+            processed_tools=[tool],
+            run_response=run_response,
+            run_context=run_context,
+            session=session,
+            async_mode=async_mode,
+            existing_tools=registry,
+        )
+
+    for function in _functions:
+        if isinstance(function, Function):
+            function._dynamic_tool_adder = add_dynamic_tool
+
+    if existing_tools is not None:
+        registry.extend(_functions)
+
+    return registry
 
 
 # ---------------------------------------------------------------------------

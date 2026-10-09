@@ -199,6 +199,8 @@ class Function(BaseModel):
     _team: Optional[Any] = None
     # The run context that the function is associated with
     _run_context: Optional[RunContext] = None
+    # Installed only on the prepared copy belonging to one execution.
+    _dynamic_tool_adder: Optional[Callable[[Any], None]] = None
 
     # Media context that the function is associated with
     _images: Optional[Sequence[Image]] = None
@@ -975,6 +977,15 @@ class FunctionCall(BaseModel):
 
     def execute(self) -> FunctionExecutionResult:
         """Runs the function call."""
+        from agno.tools._dynamic import bind_tool_result, tool_call_context
+
+        with tool_call_context(self.function):
+            execution_result = self._execute()
+        self.result = bind_tool_result(self.result, self.function)
+        execution_result.result = self.result
+        return execution_result
+
+    def _execute(self) -> FunctionExecutionResult:
         from inspect import isgenerator, isgeneratorfunction
 
         if self.function.entrypoint is None:
@@ -1183,6 +1194,15 @@ class FunctionCall(BaseModel):
 
     async def aexecute(self) -> FunctionExecutionResult:
         """Runs the function call asynchronously."""
+        from agno.tools._dynamic import bind_tool_result, tool_call_context
+
+        with tool_call_context(self.function):
+            execution_result = await self._aexecute()
+        self.result = bind_tool_result(self.result, self.function)
+        execution_result.result = self.result
+        return execution_result
+
+    async def _aexecute(self) -> FunctionExecutionResult:
         from inspect import isasyncgen, isasyncgenfunction, iscoroutinefunction, isgenerator, isgeneratorfunction
 
         if self.function.entrypoint is None:

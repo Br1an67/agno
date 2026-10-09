@@ -1,5 +1,15 @@
 # Test Log -- 04_tools
 
+### 05_same_run_tool_loading.py
+
+**Status:** NOT RUN against a provider
+**Description:** Demonstrates loading a multiplication tool and calling it in the same run.
+**Result:** Syntax and repository validation checked locally. Provider-free regression tests
+exercise sync, async, streaming, dynamic schemas, context, hooks, and confirmation/continuation.
+The live cookbook requires `OPENAI_API_KEY` and was not executed against a provider.
+
+---
+
 **Tested:** 2026-02-13
 **Environment:** .venvs/demo/bin/python, pgvector: running
 

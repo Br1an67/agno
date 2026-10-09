@@ -693,6 +693,11 @@ class Agent:
         return _init.initialize_agent(self, debug_mode=debug_mode)
 
     def add_tool(self, tool: Union[Toolkit, Callable, Function, Dict]) -> None:
+        """Add a configured tool, exposing it to the calling tool's run immediately.
+
+        Other active runs keep their current tool registries. Later runs use the
+        updated configuration, including continuation after a paused tool call.
+        """
         return _init.add_tool(self, tool)
 
     def set_tools(self, tools: Union[Sequence[Union[Toolkit, Callable, Function, Dict]], Callable[..., List]]) -> None:
